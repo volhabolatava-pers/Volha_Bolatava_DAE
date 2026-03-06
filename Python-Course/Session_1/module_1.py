@@ -34,14 +34,23 @@ def task_3(array: List[int]) -> int:
     return -1
 
 def task_4(string: str) -> int:
-    """
-    Write your code below
-    """
-    pass
+    roman_dict = {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}
+    total = 0
+    length = len(string)
+    for i in range(length):
+        current_value = roman_dict[string[i]]
+        if i < length - 1 and current_value < roman_dict[string[i + 1]]:
+            total -= current_value
+        else:
+            total += current_value
+
+    return total
 
 
 def task_5(array: List[int]) -> int:
-    """
-    Write your code below
-    """
-    pass
+    smallest = float('inf')
+    for num in array:
+        if num<smallest:
+            smallest =num
+    return smallest 
+
