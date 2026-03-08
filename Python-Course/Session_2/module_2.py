@@ -56,12 +56,25 @@ def task_5(data: List[Tuple[Any, Any]]) -> Dict[str, List[int]]:
     return result
 
 def task_6(data: List[Any]):
-    pass
+    result = set(data)
+    return(result)
 
 
 def task_7(words: [List[str]]) -> str:
-    pass
+    if not words:
+        return ""
+    
+    prefix = words[0]
+
+    for word in words[1:]:
+        while not word.startswith(prefix):
+            prefix = prefix[:-1]
+            if not prefix:
+                return ""
+    return prefix
 
 
 def task_8(haystack: str, needle: str) -> int:
-    pass
+    if needle == "":
+        return 0
+    return haystack.find(needle)
