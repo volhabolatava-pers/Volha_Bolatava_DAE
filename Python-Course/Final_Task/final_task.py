@@ -1,17 +1,16 @@
 """
 Module for preparing inverted indexes based on uploaded documents
 """
-
+import json
 import sys
 from argparse import ArgumentParser, ArgumentTypeError, FileType
 from io import TextIOWrapper
 from typing import Dict, List
+from collections import defaultdict
 
 DEFAULT_PATH_TO_STORE_INVERTED_INDEX = "inverted.index"
 
-
 class EncodedFileType(FileType):
-    """File encoder"""
 
     def __call__(self, string):
         # the special argument "-" means sys.std{in,out}
@@ -44,11 +43,25 @@ class InvertedIndex:
     """
 
     def __init__(self, words_ids: Dict[str, List[int]]):
-        pass
+        self._index = words_ids
 
     def query(self, words: List[str]) -> List[int]:
         """Return the list of relevant documents for the given query"""
-        pass
+        
+        if not words:
+            return []
+        
+        result_sets = []
+
+        for word in words:
+            if word in self._index:
+                result_sets.append(set(self._index[word]))
+            else:
+                return []
+
+        result = set.intersection(*result_sets)
+        return sorted(result)
+
 
     def dump(self, filepath: str) -> None:
         """
@@ -56,7 +69,8 @@ class InvertedIndex:
         :param filepath: path to file with documents
         :return: None
         """
-        pass
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(self._index, f)
 
     @classmethod
     def load(cls, filepath: str):
@@ -65,7 +79,13 @@ class InvertedIndex:
         :param filepath: path to file with documents
         :return: InvertedIndex
         """
-        pass
+        try:    
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            data = {}      
+        
+        return cls(data)
 
 
 def load_documents(filepath: str) -> Dict[int, str]:
@@ -74,8 +94,23 @@ def load_documents(filepath: str) -> Dict[int, str]:
     :param filepath: path to file with documents
     :return: Dict[int, str]
     """
-    pass
+    documents = {}
+    
+    try:
+        f = open(filepath, "r", encoding="utf-8")
+    except FileNotFoundError:
+        f = open(filepath + ".txt", "r", encoding="utf-8")
 
+    with f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            doc_id_str, text = line.split("\t", 1)
+            documents[int(doc_id_str)] = text
+
+    return documents
 
 def build_inverted_index(documents: Dict[int, str]) -> InvertedIndex:
     """
@@ -83,7 +118,19 @@ def build_inverted_index(documents: Dict[int, str]) -> InvertedIndex:
     :param documents: dict with documents
     :return: InvertedIndex class
     """
-    pass
+    index = defaultdict(list)
+
+    for doc_id, text in documents.items():
+        words = text.split()
+        unique_words = set(words)
+
+        for word in unique_words:
+            index[word].append(doc_id)
+
+    for word in index:
+        index[word].sort()
+
+    return InvertedIndex(dict(index))
 
 
 def callback_build(arguments) -> None:
@@ -116,12 +163,18 @@ def process_query(queries, index) -> None:
     :return: None
     """
     inverted_index = InvertedIndex.load(index)
-    for query in queries:
-        print(query[0])
-        if isinstance(query, str):
-            query = query.strip().split()
 
-        doc_indexes = ",".join(str(value) for value in inverted_index.query(query))
+    if hasattr(queries, "read"):
+        queries = [line.strip() for line in queries if line.strip()]
+
+    for query in queries:
+        if isinstance(query, str):
+            words = query.strip().split()
+        else:
+            words = query 
+
+        doc_indexes = ",".join(str(value) for value in inverted_index.query(words))
+        print(" ".join(words))
         print(doc_indexes)
 
 
