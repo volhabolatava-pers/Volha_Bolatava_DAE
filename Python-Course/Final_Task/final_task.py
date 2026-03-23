@@ -1,6 +1,9 @@
 """
 Module for preparing inverted indexes based on uploaded documents
 """
+
+## for review
+
 import json
 import sys
 from argparse import ArgumentParser, ArgumentTypeError, FileType
