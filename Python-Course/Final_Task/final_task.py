@@ -4,6 +4,7 @@ Module for preparing inverted indexes based on uploaded documents
 
 ## for review
 
+import re
 import json
 import sys
 from argparse import ArgumentParser, ArgumentTypeError, FileType
@@ -12,6 +13,10 @@ from typing import Dict, List
 from collections import defaultdict
 
 DEFAULT_PATH_TO_STORE_INVERTED_INDEX = "inverted.index"
+
+STOP_WORDS = {
+    "a", "an", "the", "and", "or", "in", "on", "at", "by", "is", "it", "of", "to", "for", "with"
+}
 
 class EncodedFileType(FileType):
 
@@ -54,16 +59,23 @@ class InvertedIndex:
         if not words:
             return []
         
+        words = [re.sub(r'[^\w\s]', '', w) for w in words]
+        
+        query_words = [w.lower() for w in words if w.lower() not in STOP_WORDS]
+
+        if not query_words:
+            return []
+        
         result_sets = []
 
-        for word in words:
+        for word in query_words:
             if word in self._index:
                 result_sets.append(set(self._index[word]))
             else:
                 return []
 
         result = set.intersection(*result_sets)
-        return sorted(result)
+        return sorted(list(result))
 
 
     def dump(self, filepath: str) -> None:
@@ -121,19 +133,18 @@ def build_inverted_index(documents: Dict[int, str]) -> InvertedIndex:
     :param documents: dict with documents
     :return: InvertedIndex class
     """
-    index = defaultdict(list)
+    index = defaultdict(set)
 
     for doc_id, text in documents.items():
-        words = text.split()
-        unique_words = set(words)
+        clean_text = re.sub(r'[^\w\s]', '', text.lower())
+        words = clean_text.split()
+
+        unique_words = {w for w in words if w not in STOP_WORDS}
 
         for word in unique_words:
-            index[word].append(doc_id)
+            index[word].add(doc_id)
 
-    for word in index:
-        index[word].sort()
-
-    return InvertedIndex(dict(index))
+    return InvertedIndex({word: sorted(ids) for word, ids in index.items()})
 
 
 def callback_build(arguments) -> None:
@@ -168,17 +179,15 @@ def process_query(queries, index) -> None:
     inverted_index = InvertedIndex.load(index)
 
     if hasattr(queries, "read"):
-        queries = [line.strip() for line in queries if line.strip()]
+        query_list = [line.strip().split() for line in queries if line.strip()]
+    else:
+        query_list = queries
 
-    for query in queries:
-        if isinstance(query, str):
-            words = query.strip().split()
-        else:
-            words = query 
-
-        doc_indexes = ",".join(str(value) for value in inverted_index.query(words))
-        print(" ".join(words))
-        print(doc_indexes)
+    for words in query_list:
+        if isinstance(words, str):
+           words = words.split()
+        result = inverted_index.query(words)
+        print(",".join(map(str, result)))
 
 
 def setup_subparsers(parser) -> None:
