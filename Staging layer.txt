@@ -1,0 +1,262 @@
+CREATE EXTENSION IF NOT EXISTS file_fdw;
+
+CREATE SERVER file_server 
+FOREIGN DATA WRAPPER file_fdw;
+
+CREATE SCHEMA sa_online_sales;
+
+CREATE FOREIGN TABLE sa_online_sales.ext_online_sales (
+"date" text,
+"day" text,
+"month" text,
+"quarter" text,
+"year" text,
+day_of_week text,
+is_weekend text,
+store_id text,
+store_name text,
+store_type text,
+category_id text,
+category_name text,
+vendor_id text,
+vendor_name text,
+item_id text,
+item_name text,
+promo_name text,
+promo_id text,
+discount_pct text,
+pack text,
+bottle_volume_ml text,
+state_bottle_cost text,
+state_bottle_retail text,
+bottles_sold text,
+sale_dollars text,
+volume_sold_liters text,
+volume_sold_gallons text) 
+SERVER file_server
+OPTIONS (format 'csv', filename 'C:/Users/Volha_Bolatava/Projects/Data Warehousing and ETL. Part 1-lab/Online_sales.csv', header 'true', delimiter ',');
+
+CREATE TABLE sa_online_sales.src_online_sales (
+"date" date,
+"day" integer,
+"month" integer,
+"quarter" integer,
+"year" integer,
+day_of_week varchar(10),
+is_weekend boolean,
+store_id integer,
+store_name varchar(100),
+store_type varchar(10),
+category_id varchar(20),
+category_name varchar(50),
+vendor_id integer,
+vendor_name varchar(100),
+item_id integer,
+item_name varchar(100),
+promo_name varchar(20),
+promo_id integer,
+discount_pct integer,
+pack integer,
+bottle_volume_ml integer,
+state_bottle_cost decimal(6,2),
+state_bottle_retail decimal(6,2),
+bottles_sold integer,
+sale_dollars decimal(15,3),
+volume_sold_liters decimal(12,3),
+volume_sold_gallons decimal(12,3));
+
+INSERT INTO sa_online_sales.src_online_sales
+SELECT DISTINCT
+    "date"::date,
+    "day"::integer,
+    "month"::integer,
+    "quarter"::integer,
+    "year"::integer,
+    day_of_week,
+    is_weekend::boolean,
+    store_id::integer,
+    store_name,
+    store_type,
+    category_id,
+    category_name,
+    vendor_id::integer,
+    vendor_name,
+    item_id::integer,
+    item_name,
+    promo_name,
+    promo_id::integer,
+    discount_pct::integer,
+    pack::integer,
+    bottle_volume_ml::integer,
+    REPLACE(state_bottle_cost, ',', '')::decimal(6,2),
+    replace(state_bottle_retail, ',', '')::decimal(6,2),
+    bottles_sold::integer,
+    REPLACE(sale_dollars, ',', '')::decimal(15,3),
+    REPLACE(volume_sold_liters, ',', '')::decimal(12,3),
+    REPLACE(volume_sold_gallons, ',', '')::decimal(12,3)
+FROM sa_online_sales.ext_online_sales;
+
+COMMIT;
+
+CREATE SCHEMA sa_offline_sales;
+
+CREATE FOREIGN TABLE sa_offline_sales.ext_offline_sales (
+"date" text,
+"day" text,
+"month" text,
+"quarter" text,
+"year" text,
+day_of_week text,
+is_weekend text,
+store_id text,
+store_name text,
+address text,
+city_id text,
+city_name text,
+zip_code text,
+store_type text,
+county_id text,
+county_name text,
+category_id text,
+category_name text,
+vendor_id text,
+vendor_name text,
+item_id text,
+item_name text,
+promo_id text,
+promo_name text,
+discount_pct text,
+pack text,
+bottle_volume_ml text,
+state_bottle_cost text,
+state_bottle_retail text,
+bottles_sold text,
+sale_dollars text,
+volume_sold_liters text,
+volume_sold_gallons text) 
+SERVER file_server
+OPTIONS (format 'csv', filename 'C:/Users/Volha_Bolatava/Projects/Data Warehousing and ETL. Part 1-lab/Offline_sales.csv', header 'true', delimiter ',');
+
+
+CREATE TABLE sa_offline_sales.src_offline_sales (
+"date" date,
+"day" integer,
+"month" integer,
+"quarter" integer,
+"year" integer,
+day_of_week varchar(10),
+is_weekend boolean,
+store_id integer,
+store_name varchar(100),
+address varchar(100),
+city_id integer,
+city_name varchar(20),
+zip_code varchar(5),
+store_type varchar(10),
+county_id integer,
+county_name varchar(20),
+category_id varchar(20),
+category_name varchar(50),
+vendor_id integer,
+vendor_name varchar(100),
+item_id integer,
+item_name varchar(100),
+promo_id integer,
+promo_name varchar(20),
+discount_pct integer,
+pack integer,
+bottle_volume_ml integer,
+state_bottle_cost decimal(6,2),
+state_bottle_retail decimal(6,2),
+bottles_sold integer,
+sale_dollars decimal(15,3),
+volume_sold_liters decimal(12,3),
+volume_sold_gallons decimal(12,3));
+
+
+INSERT INTO sa_offline_sales.src_offline_sales
+SELECT DISTINCT
+"date"::date,
+"day"::integer,
+"month"::integer,
+"quarter"::integer,
+"year"::integer,
+day_of_week,
+is_weekend::boolean,
+store_id::integer,
+store_name,
+NULLIF(address, ''),
+city_id::integer,
+NULLIF(city_name, ''),
+NULLIF(zip_code, ''),
+store_type,
+NULLIF(county_id, '')::integer,
+NULLIF(county_name, ''),
+NULLIF(category_id, '')::integer,
+NULLIF(category_name, ''),
+vendor_id::integer,
+vendor_name,
+item_id::integer,
+item_name,
+promo_id::integer,
+promo_name,
+discount_pct::integer,
+pack::integer,
+bottle_volume_ml::integer,
+REPLACE(state_bottle_cost, ',', '')::decimal(6,2),
+Replace(state_bottle_retail, ',', '')::decimal(6,2),
+bottles_sold::integer,
+NULLIF(NULLIF(REPLACE(sale_dollars, ',', ''), '#VALUE!'), '')::decimal(15,3),
+NULLIF(NULLIF(REPLACE(volume_sold_liters, ',', ''), '#VALUE!'), '')::decimal(12,3),
+NULLIF(NULLIF(REPLACE(volume_sold_gallons, ',', ''), '#VALUE!'), '')::decimal(12,3)
+FROM sa_offline_sales.ext_offline_sales;
+
+COMMIT;
+
+CREATE SCHEMA BL_CL;
+
+CREATE TABLE BL_CL.T_MAP_STORES(
+store_id integer,
+store_name varchar(100),
+store_src_id integer,
+source_system varchar(100),
+source_table varchar(100));
+
+COMMIT;
+
+INSERT INTO BL_CL.T_MAP_STORES (store_name,store_src_id, source_system,source_table)
+SELECT DISTINCT
+TRIM(store_name),
+store_id,
+'sa_offline_sales',
+'src_offline_sales'
+from sa_offline_sales.src_offline_sales;
+
+COMMIT;
+
+INSERT INTO BL_CL.T_MAP_STORES (store_name,store_src_id, source_system,source_table)
+SELECT DISTINCT
+TRIM(store_name),
+store_id,
+'sa_online_sales',
+'src_online_sales'
+from sa_online_sales.src_online_sales;
+
+COMMIT;
+
+UPDATE BL_CL.T_MAP_STORES
+set store_id = sub.new_id
+FROM ( SELECT 
+store_name, 
+store_src_id, 
+source_system,
+source_table,
+DENSE_RANK() OVER (ORDER BY UPPER(TRIM(store_name))) as new_id
+FROM BL_CL.T_MAP_STORES
+) AS sub
+WHERE BL_CL.T_MAP_STORES.store_name = sub.store_name 
+AND BL_CL.T_MAP_STORES.store_src_id = sub.store_src_id
+AND BL_CL.T_MAP_STORES.source_system = sub.source_system
+AND BL_CL.T_MAP_STORES.source_table = sub.source_table;
+
+COMMIT;
