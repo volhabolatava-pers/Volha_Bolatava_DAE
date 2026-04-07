@@ -1,0 +1,295 @@
+CREATE EXTENSION IF NOT EXISTS file_fdw;
+
+CREATE SERVER IF NOT EXISTS file_server 
+FOREIGN DATA WRAPPER file_fdw;
+
+CREATE SCHEMA IF NOT EXISTS sa_online_sales;
+
+CREATE FOREIGN table IF NOT EXISTS sa_online_sales.ext_online_sales (
+"date" VARCHAR(15),
+"day" VARCHAR(5),
+"month" VARCHAR(5),
+"quarter" VARCHAR(5),
+"year" VARCHAR(5),
+day_of_week VARCHAR(10),
+is_weekend VARCHAR(5),
+store_id VARCHAR(10),
+store_name VARCHAR(100),
+store_type VARCHAR(10),
+category_id VARCHAR(20),
+category_name VARCHAR(50),
+vendor_id VARCHAR(10),
+vendor_name VARCHAR(100),
+item_id VARCHAR(10),
+item_name VARCHAR(100),
+promo_name VARCHAR(20),
+promo_id VARCHAR(5),
+discount_pct VARCHAR(5),
+pack VARCHAR(5),
+bottle_volume_ml VARCHAR(10),
+state_bottle_cost VARCHAR(10),
+state_bottle_retail VARCHAR(10),
+bottles_sold VARCHAR(10),
+sale_dollars VARCHAR(20),
+volume_sold_liters VARCHAR(10),
+volume_sold_gallons VARCHAR(10)) 
+SERVER file_server
+OPTIONS (format 'csv', filename 'C:/Users/Volha_Bolatava/Projects/Data Warehousing and ETL. Part 1-lab/Online_sales.csv', header 'true', delimiter ',');
+
+CREATE TABLE IF NOT EXISTS sa_online_sales.src_online_sales (
+"date" VARCHAR(15),
+"day" VARCHAR(5),
+"month" VARCHAR(5),
+"quarter" VARCHAR(5),
+"year" VARCHAR(5),
+day_of_week VARCHAR(10),
+is_weekend VARCHAR(5),
+store_id VARCHAR(10),
+store_name VARCHAR(100),
+store_type VARCHAR(10),
+category_id VARCHAR(20),
+category_name VARCHAR(50),
+vendor_id VARCHAR(10),
+vendor_name VARCHAR(100),
+item_id VARCHAR(10),
+item_name VARCHAR(100),
+promo_name VARCHAR(20),
+promo_id VARCHAR(5),
+discount_pct VARCHAR(5),
+pack VARCHAR(5),
+bottle_volume_ml VARCHAR(10),
+state_bottle_cost VARCHAR(10),
+state_bottle_retail VARCHAR(10),
+bottles_sold VARCHAR(10),
+sale_dollars VARCHAR(20),
+volume_sold_liters VARCHAR(10),
+volume_sold_gallons VARCHAR(10));
+
+INSERT INTO sa_online_sales.src_online_sales
+SELECT DISTINCT
+    "date",
+    "day",
+    "month",
+    "quarter",
+    "year",
+    day_of_week,
+    is_weekend,
+    store_id,
+    store_name,
+    store_type,
+    category_id,
+    category_name,
+    vendor_id,
+    vendor_name,
+    item_id,
+    item_name,
+    promo_name,
+    promo_id,
+    discount_pct,
+    pack,
+    bottle_volume_ml,
+    state_bottle_cost,
+    state_bottle_retail,
+    bottles_sold,
+    sale_dollars,
+    volume_sold_liters,
+    volume_sold_gallons
+FROM sa_online_sales.ext_online_sales as ext
+WHERE NOT EXISTS(
+SELECT *
+FROM sa_online_sales.src_online_sales AS src
+WHERE src."date" = ext."date"
+AND src.store_id = ext.store_id
+AND src.item_id = ext.item_id
+AND src.vendor_id = ext.vendor_id
+AND src.promo_id = ext.promo_id
+AND src.bottles_sold = ext.bottles_sold
+AND src.sale_dollars = ext.sale_dollars);
+
+COMMIT;
+
+
+CREATE SCHEMA IF NOT EXISTS sa_offline_sales;
+
+CREATE FOREIGN TABLE IF NOT EXISTS sa_offline_sales.ext_offline_sales (
+"date" VARCHAR(15),
+"day" VARCHAR(5),
+"month" VARCHAR(5),
+"quarter" VARCHAR(5),
+"year" VARCHAR(5),
+day_of_week VARCHAR(10),
+is_weekend VARCHAR(5),
+store_id VARCHAR(10),
+store_name VARCHAR(100),
+address VARCHAR(100),
+city_id  VARCHAR(20),
+city_name VARCHAR(20),
+zip_code  VARCHAR(5),
+store_type VARCHAR(10),
+county_id VARCHAR(10),
+county_name VARCHAR(20),
+category_id VARCHAR(20),
+category_name VARCHAR(50),
+vendor_id VARCHAR(10),
+vendor_name VARCHAR(100),
+item_id VARCHAR(10),
+item_name VARCHAR(100),
+promo_id VARCHAR(5),
+promo_name VARCHAR(20),
+discount_pct VARCHAR(5),
+pack VARCHAR(5),
+bottle_volume_ml VARCHAR(10),
+state_bottle_cost VARCHAR(10),
+state_bottle_retail VARCHAR(10),
+bottles_sold VARCHAR(10),
+sale_dollars VARCHAR(20),
+volume_sold_liters VARCHAR(10),
+volume_sold_gallons VARCHAR(10)) 
+SERVER file_server
+OPTIONS (format 'csv', filename 'C:/Users/Volha_Bolatava/Projects/Data Warehousing and ETL. Part 1-lab/Offline_sales.csv', header 'true', delimiter ',');
+
+
+CREATE TABLE IF NOT EXISTS sa_offline_sales.src_offline_sales (
+"date" VARCHAR(15),
+"day" VARCHAR(5),
+"month" VARCHAR(5),
+"quarter" VARCHAR(5),
+"year" VARCHAR(5),
+day_of_week VARCHAR(10),
+is_weekend VARCHAR(5),
+store_id VARCHAR(10),
+store_name VARCHAR(100),
+address VARCHAR(100),
+city_id  VARCHAR(20),
+city_name VARCHAR(20),
+zip_code  VARCHAR(5),
+store_type VARCHAR(10),
+county_id VARCHAR(10),
+county_name VARCHAR(20),
+category_id VARCHAR(20),
+category_name VARCHAR(50),
+vendor_id VARCHAR(10),
+vendor_name VARCHAR(100),
+item_id VARCHAR(10),
+item_name VARCHAR(100),
+promo_id VARCHAR(5),
+promo_name VARCHAR(20),
+discount_pct VARCHAR(5),
+pack VARCHAR(5),
+bottle_volume_ml VARCHAR(10),
+state_bottle_cost VARCHAR(10),
+state_bottle_retail VARCHAR(10),
+bottles_sold VARCHAR(10),
+sale_dollars VARCHAR(20),
+volume_sold_liters VARCHAR(10),
+volume_sold_gallons VARCHAR(10));
+
+
+INSERT INTO sa_offline_sales.src_offline_sales
+SELECT DISTINCT
+    "date",
+    "day",
+    "month",
+    "quarter",
+    "year",
+    day_of_week,
+    is_weekend,
+    store_id,
+    store_name,
+    address,
+    city_id,
+    city_name,
+    zip_code,
+    store_type,
+    county_id,
+    county_name,
+    category_id,
+    category_name,
+    vendor_id,
+    vendor_name,
+    item_id,
+    item_name,
+    promo_id,
+    promo_name,
+    discount_pct,
+    pack,
+    bottle_volume_ml,
+    state_bottle_cost,
+    state_bottle_retail,
+    bottles_sold,
+    sale_dollars,
+    volume_sold_liters,
+    volume_sold_gallons
+FROM sa_offline_sales.ext_offline_sales AS ext
+WHERE NOT EXISTS(
+SELECT *
+FROM sa_offline_sales.src_offline_sales AS src
+WHERE src."date" = ext."date"
+AND src.store_id = ext.store_id
+AND src.item_id = ext.item_id
+AND src.vendor_id = ext.vendor_id
+AND src.promo_id = ext.promo_id
+AND src.bottles_sold = ext.bottles_sold
+AND src.sale_dollars = ext.sale_dollars);
+
+COMMIT;
+
+CREATE SCHEMA IF NOT EXISTS BL_CL;
+
+CREATE TABLE IF NOT EXISTS BL_CL.T_MAP_STORES(
+store_id integer,
+store_name varchar(100),
+store_src_id integer,
+source_system varchar(100),
+source_table varchar(100));
+
+
+INSERT INTO BL_CL.T_MAP_STORES (store_name,store_src_id, source_system,source_table)
+SELECT DISTINCT ON (store_id::integer)
+TRIM(store_name),
+store_id::integer,
+'sa_offline_sales',
+'src_offline_sales'
+from sa_offline_sales.src_offline_sales AS src
+WHERE NOT EXISTS(
+SELECT *
+FROM BL_CL.T_MAP_STORES AS m
+WHERE m.store_src_id  = src.store_id::integer
+AND m.source_system = 'sa_offline_sales'
+AND m.source_table  = 'src_offline_sales'
+)
+ORDER BY store_id::integer, TRIM(store_name); 
+
+
+INSERT INTO BL_CL.T_MAP_STORES (store_name,store_src_id, source_system,source_table)
+SELECT DISTINCT ON (store_id::integer)
+TRIM(store_name),
+store_id::integer,
+'sa_online_sales',
+'src_online_sales'
+from sa_online_sales.src_online_sales  AS src
+WHERE NOT EXISTS(
+SELECT *
+FROM BL_CL.T_MAP_STORES AS m
+WHERE m.store_src_id  = src.store_id::integer
+AND m.source_system = 'sa_online_sales'
+AND m.source_table  = 'src_online_sales'
+)
+ORDER BY store_id::integer, TRIM(store_name); 
+
+UPDATE BL_CL.T_MAP_STORES
+set store_id = sub.new_id
+FROM ( SELECT 
+store_name, 
+store_src_id, 
+source_system,
+source_table,
+DENSE_RANK() OVER (ORDER BY UPPER(TRIM(store_name))) as new_id
+FROM BL_CL.T_MAP_STORES
+) AS sub
+WHERE  BL_CL.T_MAP_STORES.store_src_id = sub.store_src_id
+AND BL_CL.T_MAP_STORES.source_system = sub.source_system
+AND BL_CL.T_MAP_STORES.source_table = sub.source_table;
+
+COMMIT;
+  
