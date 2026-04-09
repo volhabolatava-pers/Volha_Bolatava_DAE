@@ -167,10 +167,11 @@ CREATE TABLE IF NOT EXISTS BL_3NF.CE_SALES (
   VALUES (-1, 'n.a.', 'n.a.', 'n.a.', -1, '1900-01-01', '1900-01-01', 'MANUAL', 'MANUAL');
   
   INSERT INTO BL_3NF.CE_VENDORS (VENDOR_ID, VENDOR_SRC_ID, VENDOR_NAME, TA_INSERT_DT, TA_UPDATE_DT, TA_SOURCE_SYSTEM, TA_SOURCE_ENTITY)
-  VALUES (-1, 'n.a.', 'n.a.', '1900-01-01', '1900-01-01', 'MANUAL', 'MANUAL');
-  
+  VALUES (-1, 'n.a.', 'n.a.', '1900-01-01', '1900-01-01', 'MANUAL', 'MANUAL')
+  ON CONFLICT DO NOTHING;
   INSERT INTO BL_3NF.CE_CATEGORIES (CATEGORY_ID, CATEGORY_SRC_ID, CATEGORY_NAME, TA_INSERT_DT, TA_UPDATE_DT, TA_SOURCE_SYSTEM, TA_SOURCE_ENTITY)
-  VALUES (-1, 'n.a.', 'n.a.', '1900-01-01', '1900-01-01', 'MANUAL', 'MANUAL');
+  VALUES (-1, 'n.a.', 'n.a.', '1900-01-01', '1900-01-01', 'MANUAL', 'MANUAL')
+  ON CONFLICT DO NOTHING;
   
   INSERT INTO BL_3NF.CE_ITEMS_SCD (ITEM_ID, ITEM_SRC_ID, ITEM_NAME, PACK, BOTTLE_VOLUME_ML, STATE_BOTTLE_RETAIL, STATE_BOTTLE_COST, CATEGORY_ID, VENDOR_ID, TA_START_DT, TA_END_DT, TA_IS_ACTIVE, TA_INSERT_DT, TA_SOURCE_SYSTEM, TA_SOURCE_ENTITY)
   VALUES (-1, 'n.a.', 'n.a.', -1, -1, -1, -1, -1, -1, '1900-01-01', '9999-12-31', 'Y', '1900-01-01', 'MANUAL', 'MANUAL');
@@ -209,13 +210,17 @@ SELECT
     'src_offline_sales'
 FROM (
     SELECT DISTINCT  
-        county_id::VARCHAR AS county_id,
-        county_name
-    FROM sa_offline_sales.src_offline_sales) AS src
+        TRIM(county_id::VARCHAR) AS county_id,
+        MAX(TRIM(county_name)) AS county_name
+    FROM sa_offline_sales.src_offline_sales
+    WHERE county_id IS NOT NULL
+    AND TRIM(county_id::VARCHAR) <> ''
+    GROUP BY TRIM(county_id::VARCHAR)) AS src
 WHERE NOT EXISTS (
     SELECT 1
     FROM BL_3NF.CE_COUNTIES t
-    WHERE t.COUNTY_SRC_ID = src.county_id);
+    WHERE t.COUNTY_SRC_ID = COALESCE(NULLIF(TRIM(src.county_id::VARCHAR), ''), src.county_name, 'n.a.'));
+
 
 INSERT INTO BL_3NF.CE_CITIES (CITY_ID, CITY_SRC_ID, CITY_NAME, ZIP_CODE, COUNTY_ID, TA_INSERT_DT, TA_UPDATE_DT, TA_SOURCE_SYSTEM, TA_SOURCE_ENTITY)
 SELECT
@@ -229,28 +234,31 @@ SELECT
     'sa_offline_sales',
     'src_offline_sales'
 FROM (
-    SELECT DISTINCT  
+    SELECT 
         city_id, 
-        city_name,
-        zip_code,
-        county_id
-    FROM sa_offline_sales.src_offline_sales) AS src
+        MAX(city_name) as city_name, 
+        MAX(zip_code) as zip_code, 
+        MAX(county_id) as county_id
+    FROM sa_offline_sales.src_offline_sales
+    GROUP BY city_id) AS src
 LEFT JOIN BL_3NF.CE_COUNTIES fk ON src.county_id = fk.COUNTY_SRC_ID
 WHERE NOT EXISTS (
     SELECT 1
     FROM BL_3NF.CE_CITIES t
     WHERE t.CITY_SRC_ID = src.city_id);
 
+COMMIT;
+
 INSERT INTO BL_3NF.CE_STREETS (STREET_ID, STREET_SRC_ID, TA_INSERT_DT, TA_UPDATE_DT, TA_SOURCE_SYSTEM, TA_SOURCE_ENTITY)
 SELECT
     NEXTVAL('BL_3NF.SEQ_CE_STREETS'),
-    COALESCE(NULLIF(TRIM(REGEXP_REPLACE(src.address, '^\d+\s*', '')), ''), 'n.a.'),
+    src.address,
     CURRENT_DATE,
     CURRENT_DATE,
     'sa_offline_sales',
     'src_offline_sales'
 FROM (
-    SELECT DISTINCT address
+    SELECT DISTINCT COALESCE(NULLIF(TRIM(REGEXP_REPLACE(address, '^\d+\s*', '')), ''), 'n.a.') AS address 
     FROM sa_offline_sales.src_offline_sales) AS src
 WHERE NOT EXISTS (
     SELECT 1
@@ -266,7 +274,7 @@ WITH clean_addresses AS (
         COALESCE(NULLIF(TRIM(REGEXP_REPLACE(address, '^\d+\s*', '')), ''), 'n.a.') AS street
     FROM sa_offline_sales.src_offline_sales
     WHERE address IS NOT NULL)
-SELECT
+SELECT DISTINCT ON (src.raw_address)
     NEXTVAL('BL_3NF.SEQ_CE_ADDRESSES'),
     COALESCE(src.raw_address, 'n.a.'),
     COALESCE(src.h_number::INTEGER, -1),
@@ -282,7 +290,8 @@ LEFT JOIN BL_3NF.CE_STREETS st ON st.STREET_SRC_ID = src.street
 WHERE NOT EXISTS ( 
     SELECT 1
     FROM BL_3NF.CE_ADDRESSES t
-    WHERE t.ADDRESS_SRC_ID = src.raw_address);
+    WHERE t.ADDRESS_SRC_ID = src.raw_address)
+ORDER BY src.raw_address, cit.CITY_ID;
 
 INSERT INTO BL_3NF.CE_STORES (STORE_ID, STORE_SRC_ID, STORE_NAME, STORE_TYPE, ADDRESS_ID, TA_INSERT_DT, TA_UPDATE_DT, TA_SOURCE_SYSTEM, TA_SOURCE_ENTITY)
 SELECT DISTINCT ON (map.store_id::INTEGER)
@@ -317,14 +326,17 @@ SELECT
     'sa_offline_sales',
     'src_offline_sales'
 FROM (
-    SELECT DISTINCT  
+    SELECT   
         vendor_id, 
-        vendor_name
-    FROM sa_offline_sales.src_offline_sales) AS src
+        MAX(vendor_name) AS vendor_name
+    FROM sa_offline_sales.src_offline_sales
+    WHERE vendor_id IS NOT NULL
+    GROUP BY vendor_id) AS src
 WHERE NOT EXISTS (
     SELECT 1
     FROM BL_3NF.CE_VENDORS t
     WHERE t.VENDOR_SRC_ID = src.vendor_id);
+
 
 INSERT INTO BL_3NF.CE_CATEGORIES (CATEGORY_ID, CATEGORY_SRC_ID, CATEGORY_NAME, TA_INSERT_DT, TA_UPDATE_DT, TA_SOURCE_SYSTEM, TA_SOURCE_ENTITY)
 SELECT
@@ -336,10 +348,12 @@ SELECT
     'sa_offline_sales',
     'src_offline_sales'
 FROM (
-    SELECT DISTINCT  
+    SELECT  
         category_id, 
-        category_name
-    FROM sa_offline_sales.src_offline_sales) AS src
+        MAX (category_name) AS category_name
+    FROM sa_offline_sales.src_offline_sales
+    WHERE category_id IS NOT NULL
+    GROUP BY category_id) AS src
 WHERE NOT EXISTS (
     SELECT 1
     FROM BL_3NF.CE_CATEGORIES t
@@ -386,6 +400,7 @@ WHERE NOT EXISTS (
     WHERE t.ITEM_SRC_ID = s.item_id AND t.TA_IS_ACTIVE = 'Y')
 ORDER BY s.item_id;
 
+
 INSERT INTO BL_3NF.CE_PROMOTIONS (PROMO_ID, PROMO_SRC_ID, PROMO_NAME, DISCOUNT_PCT, TA_INSERT_DT, TA_UPDATE_DT, TA_SOURCE_SYSTEM, TA_SOURCE_ENTITY)
 SELECT
     NEXTVAL('BL_3NF.SEQ_CE_PROMOTIONS'),
@@ -406,6 +421,7 @@ WHERE NOT EXISTS (
     SELECT 1
     FROM BL_3NF.CE_PROMOTIONS t
     WHERE t.PROMO_SRC_ID = src.promo_id);
+
 
 INSERT INTO BL_3NF.CE_SALES (DATE_ID, STORE_ID, ITEM_ID, PROMO_ID, BOTTLES_SOLD, SALE_DOLLARS, VOLUME_SOLD_LITERS)
 SELECT
@@ -462,14 +478,16 @@ SELECT DISTINCT ON (map.store_id::INTEGER)
     'sa_online_sales',
     'src_online_sales'
 FROM BL_CL.T_MAP_STORES MAP
-LEFT JOIN sa_online_sales.src_online_sales src 
+LEFT JOIN sa_online_sales.src_online_sales AS src
     ON map.store_src_id::INTEGER = src.store_id::INTEGER
     AND map.source_system = 'sa_online_sales'
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM BL_3NF.CE_STORES t
-    WHERE t.STORE_ID = map.store_id)
+    WHERE map.source_system = 'sa_online_sales'
+    AND NOT EXISTS (
+        SELECT 1
+        FROM BL_3NF.CE_STORES t
+        WHERE t.STORE_ID = map.store_id)
 ORDER BY map.store_id::INTEGER;  
+
 
 INSERT INTO BL_3NF.CE_VENDORS (VENDOR_ID, VENDOR_SRC_ID, VENDOR_NAME, TA_INSERT_DT, TA_UPDATE_DT, TA_SOURCE_SYSTEM, TA_SOURCE_ENTITY)
 SELECT
@@ -481,14 +499,18 @@ SELECT
     'sa_online_sales',
     'src_online_sales'
 FROM (
-    SELECT DISTINCT  
+    SELECT   
         vendor_id, 
-        vendor_name
-    FROM sa_online_sales.src_online_sales) AS src
+        MAX(vendor_name) AS vendor_name
+    FROM sa_online_sales.src_online_sales
+    WHERE vendor_id IS NOT NULL
+    GROUP BY vendor_id) AS src
 WHERE NOT EXISTS (
     SELECT 1
     FROM BL_3NF.CE_VENDORS t
     WHERE t.VENDOR_SRC_ID = src.vendor_id);
+
+
 
 INSERT INTO BL_3NF.CE_CATEGORIES (CATEGORY_ID, CATEGORY_SRC_ID, CATEGORY_NAME, TA_INSERT_DT, TA_UPDATE_DT, TA_SOURCE_SYSTEM, TA_SOURCE_ENTITY)
 SELECT
@@ -500,10 +522,12 @@ SELECT
     'sa_online_sales',
     'src_online_sales'
 FROM (
-    SELECT DISTINCT  
+    SELECT  
         category_id, 
-        category_name
-    FROM sa_online_sales.src_online_sales) AS src
+        MAX (category_name) AS category_name
+    FROM sa_online_sales.src_online_sales
+    WHERE category_id IS NOT NULL
+    GROUP BY category_id) AS src
 WHERE NOT EXISTS (
     SELECT 1
     FROM BL_3NF.CE_CATEGORIES t
@@ -550,6 +574,7 @@ WHERE NOT EXISTS (
     WHERE t.ITEM_SRC_ID = s.item_id AND t.TA_IS_ACTIVE = 'Y')
 ORDER BY s.item_id;
 
+
 INSERT INTO BL_3NF.CE_PROMOTIONS (PROMO_ID, PROMO_SRC_ID, PROMO_NAME, DISCOUNT_PCT, TA_INSERT_DT, TA_UPDATE_DT, TA_SOURCE_SYSTEM, TA_SOURCE_ENTITY)
 SELECT
     NEXTVAL('BL_3NF.SEQ_CE_PROMOTIONS'),
@@ -570,6 +595,7 @@ WHERE NOT EXISTS (
     SELECT 1
     FROM BL_3NF.CE_PROMOTIONS t
     WHERE t.PROMO_SRC_ID = src.promo_id);
+
 
 INSERT INTO BL_3NF.CE_SALES (DATE_ID, STORE_ID, ITEM_ID, PROMO_ID, BOTTLES_SOLD, SALE_DOLLARS, VOLUME_SOLD_LITERS)
 SELECT
@@ -592,9 +618,4 @@ WHERE NOT EXISTS (
       AND t.STORE_ID = m.STORE_ID 
       AND t.ITEM_ID = i.ITEM_ID);
 
-COMMIT;
-
-   	
-   	
-   	
-   
+COMMIT; 
