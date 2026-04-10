@@ -66,10 +66,10 @@ UNION ALL
 SELECT 'Promotions', 
        (SELECT COUNT(DISTINCT promo_id) FROM sa_offline_sales.src_offline_sales WHERE promo_id IS NOT NULL),
        (SELECT COUNT(*) FROM BL_3NF.CE_PROMOTIONS WHERE TA_SOURCE_ENTITY = 'src_offline_sales'),
-       (SELECT COUNT(DISTINCT promo_id) FROM sa_offline_sales.src_offline_sales WHERE promo_id IS NOT NULL) - (SELECT COUNT(*) FROM BL_3NF.CE_PROMOTIONS WHERE TA_SOURCE_ENTITY = 'src_offline_sales')
+       (SELECT COUNT(DISTINCT promo_id) FROM sa_offline_sales.src_offline_sales WHERE promo_id IS NOT NULL) - (SELECT COUNT(*) FROM BL_3NF.CE_PROMOTIONS WHERE TA_SOURCE_ENTITY = 'src_offline_sales');
 
 
---Oтline_source 
+--Online_source 
 
 SELECT 'Dates' AS table_name, 
        (SELECT COUNT(DISTINCT date::DATE) FROM sa_online_sales.src_online_sales WHERE date IS NOT NULL) AS source_rows,
@@ -113,7 +113,7 @@ SELECT 'Promotions',
         WHERE PROMO_SRC_ID IN (SELECT DISTINCT promo_id::text FROM sa_online_sales.src_online_sales)),
        (SELECT COUNT(DISTINCT promo_id) FROM sa_online_sales.src_online_sales WHERE promo_id IS NOT NULL) - (SELECT COUNT(DISTINCT PROMO_SRC_ID) 
         FROM BL_3NF.CE_PROMOTIONS 
-        WHERE PROMO_SRC_ID IN (SELECT DISTINCT promo_id::text FROM sa_online_sales.src_online_sales))
+        WHERE PROMO_SRC_ID IN (SELECT DISTINCT promo_id::text FROM sa_online_sales.src_online_sales));
 
         
 --Sales_table         
