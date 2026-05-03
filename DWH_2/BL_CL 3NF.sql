@@ -1,4 +1,6 @@
 CREATE SCHEMA IF NOT EXISTS BL_CL;
+
+-- Create the ETL role if it does not exist
 DO $$
 BEGIN
    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'bl_cl') THEN
@@ -6,14 +8,21 @@ BEGIN
    END IF;
 END
 $$;
+
+-- Grant permissions to source schemas and target 3NF schema
 GRANT USAGE ON SCHEMA sa_offline_sales TO BL_CL;
 GRANT USAGE ON SCHEMA sa_online_sales  TO BL_CL;
 GRANT USAGE ON SCHEMA BL_3NF           TO BL_CL;
+
+-- Grant data access rights
 GRANT SELECT ON ALL TABLES IN SCHEMA sa_offline_sales TO BL_CL;
 GRANT SELECT ON ALL TABLES IN SCHEMA sa_online_sales  TO BL_CL;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA BL_3NF TO BL_CL;
-GRANT USAGE  ON ALL SEQUENCES IN SCHEMA BL_3NF TO BL_CL;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA BL_3NF TO BL_CL;
+
 COMMIT;
+
+-- Metadata table for storing execution logs
   
 CREATE TABLE IF NOT EXISTS BL_CL.MTA_LOGS (
 	LOG_ID           BIGSERIAL PRIMARY KEY,
@@ -22,6 +31,8 @@ CREATE TABLE IF NOT EXISTS BL_CL.MTA_LOGS (
     ROWS_AFFECTED    INTEGER,
     LOG_MESSAGE      TEXT
 );
+
+-- Reusable procedure to write logs into MTA_LOGS
 
 CREATE OR REPLACE PROCEDURE BL_CL.PRC_WRITE_LOG(
     p_proc IN VARCHAR,
@@ -37,6 +48,8 @@ END;
 $$;
 
 COMMIT;
+
+--Loading to CE_DATES in 3NF layer
 
 CREATE OR REPLACE PROCEDURE BL_CL.LOAD_CE_DATES()
 LANGUAGE plpgsql AS $$
@@ -72,6 +85,8 @@ CALL BL_CL.PRC_WRITE_LOG(p_proc, 0,'ERROR:'|| SQLERRM);
 RAISE NOTICE 'Error during loading CE_DATES: %', SQLERRM;
 END;
 $$;
+
+--Loading to CE_COUNTIES in 3NF layer
 
 CREATE OR REPLACE PROCEDURE BL_CL.LOAD_CE_COUNTIES()
 LANGUAGE plpgsql AS $$
@@ -111,7 +126,7 @@ RAISE NOTICE 'Error during loading CE_COUNTIES: %', SQLERRM;
 END;
 $$;
 
-
+--Loading to CE_CITIES in 3NF layer
 
 CREATE OR REPLACE PROCEDURE BL_CL.LOAD_CE_CITIES()
 LANGUAGE plpgsql AS $$
@@ -154,6 +169,8 @@ END;
 $$;
 
 
+--Loading to CE_STREETS in 3NF layer
+
 CREATE OR REPLACE PROCEDURE BL_CL.LOAD_CE_STREETS()
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -186,6 +203,7 @@ RAISE NOTICE 'Error during loading CE_STREETS: %', SQLERRM;
 END;
 $$;
 
+--Loading to CE_ADDRESSES in 3NF layer
 
 CREATE OR REPLACE PROCEDURE BL_CL.LOAD_CE_ADDRESSES()
 LANGUAGE plpgsql AS $$
@@ -230,6 +248,8 @@ RAISE NOTICE 'Error during loading CE_ADDRESSES: %', SQLERRM;
 END;
 $$;
 
+
+--Function returns target table for loading CE_ADDRESSES in 3NF layer
 
 CREATE OR REPLACE FUNCTION BL_CL.STORES_FOR_LOAD()
 RETURNS TABLE (
@@ -281,6 +301,8 @@ LEFT JOIN sa_online_sales.src_online_sales AS src
 END;
 $$;
 
+--Loading to CE_STORES in 3NF layer
+
 CREATE OR REPLACE PROCEDURE BL_CL.LOAD_CE_STORES()
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -313,6 +335,7 @@ RAISE NOTICE 'Error during loading CE_STORES: %', SQLERRM;
 END;
 $$;
 
+--Function returns target table for loading CE_VENDORS in 3NF layer
 
 CREATE OR REPLACE FUNCTION BL_CL.VENDORS_FOR_LOAD()
 RETURNS TABLE (
@@ -352,6 +375,8 @@ FROM (
     END;
 $$;
  
+--Loading to CE_VENDORS in 3NF layer
+
 CREATE OR REPLACE PROCEDURE BL_CL.LOAD_CE_VENDORS()
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -383,6 +408,7 @@ RAISE NOTICE 'Error during loading CE_VENDORS: %', SQLERRM;
 END;
 $$;
 
+--Loading to CE_CATEGORIES in 3NF layer
 
 CREATE OR REPLACE PROCEDURE BL_CL. LOAD_CE_CATEGORIES()
 LANGUAGE plpgsql AS $$
@@ -434,6 +460,8 @@ RAISE NOTICE 'Error during loading CE_CATEGORIES: %', SQLERRM;
 END;
 $$;
 
+--Loading to CE_PROMOTIONS in 3NF layer
+
 CREATE OR REPLACE PROCEDURE BL_CL.LOAD_CE_PROMOTIONS()
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -483,68 +511,78 @@ RAISE NOTICE 'Error during loading CE_PROMOTIONS: %', SQLERRM;
 END;
 $$;
 
+--Loading to CE_SALES in 3NF layer
+
 CREATE OR REPLACE PROCEDURE BL_CL.LOAD_CE_SALES()
 LANGUAGE plpgsql AS $$
 DECLARE
-    p_rows INTEGER := 0;
-	p_rows_current INTEGER := 0;
-    p_proc VARCHAR  := 'BL_CL.LOAD_CE_SALES';
+    p_rows         INTEGER := 0;
+    p_proc         VARCHAR := 'BL_CL.LOAD_CE_SALES';
+    v_last_load_dt DATE;
 BEGIN
-    INSERT INTO BL_3NF.CE_SALES (
-        DATE_ID, STORE_ID, ITEM_ID, PROMO_ID,
-        BOTTLES_SOLD, SALE_DOLLARS, VOLUME_SOLD_LITERS)
-    SELECT
-        COALESCE(d.DATE_ID,  -1),
-        COALESCE(m.STORE_ID, -1),
-        COALESCE(i.ITEM_ID,  -1),
-        COALESCE(p.PROMO_ID, -1),
-        s.bottles_sold::INTEGER,
-        COALESCE(REPLACE(NULLIF(s.sale_dollars,        '#VALUE!'), ',', '')::DECIMAL(15,3), 0),
-        COALESCE(REPLACE(NULLIF(s.volume_sold_liters,  '#VALUE!'), ',', '')::DECIMAL(12,3), 0)
-    FROM sa_offline_sales.src_offline_sales s
-    LEFT JOIN BL_3NF.CE_DATES      d ON s.date::DATE          = d.DATE_DT
-    LEFT JOIN BL_CL.T_MAP_STORES   m ON s.store_id::INTEGER   = m.store_src_id
-                                     AND m.source_system       = 'sa_offline_sales'
-    LEFT JOIN BL_3NF.CE_ITEMS_SCD  i ON s.item_id             = i.ITEM_SRC_ID
-                                     AND i.TA_IS_ACTIVE        = 'Y'
-    LEFT JOIN BL_3NF.CE_PROMOTIONS p ON s.promo_id            = p.PROMO_SRC_ID
-    WHERE NOT EXISTS (
-        SELECT 1 FROM BL_3NF.CE_SALES t
-        WHERE t.DATE_ID  = d.DATE_ID
-          AND t.STORE_ID = m.STORE_ID
-          AND t.ITEM_ID  = i.ITEM_ID
-    );
 
-    GET DIAGNOSTICS p_rows_current = ROW_COUNT;
-    p_rows := p_rows + p_rows_current;
+    SELECT COALESCE(MAX(d.date_dt), '1900-01-01') INTO v_last_load_dt
+    FROM BL_3NF.CE_SALES f
+    JOIN BL_3NF.CE_DATES d ON f.date_id = d.date_id;
+
 
     INSERT INTO BL_3NF.CE_SALES (
         DATE_ID, STORE_ID, ITEM_ID, PROMO_ID,
-        BOTTLES_SOLD, SALE_DOLLARS, VOLUME_SOLD_LITERS)
-    SELECT
-        COALESCE(d.DATE_ID,  -1),
-        COALESCE(m.STORE_ID, -1),
-        COALESCE(i.ITEM_ID,  -1),
-        COALESCE(p.PROMO_ID, -1),
-        s.bottles_sold::INTEGER,
-        COALESCE(REPLACE(NULLIF(s.sale_dollars,       '#VALUE!'), ',', '')::DECIMAL(15,3), 0),
-        COALESCE(REPLACE(NULLIF(s.volume_sold_liters, '#VALUE!'), ',', '')::DECIMAL(12,3), 0)
-    FROM sa_online_sales.src_online_sales s
-    LEFT JOIN BL_3NF.CE_DATES      d ON s.date::DATE          = d.DATE_DT
-    LEFT JOIN BL_CL.T_MAP_STORES   m ON s.store_id::INTEGER   = m.store_src_id
-                                     AND m.source_system       = 'sa_online_sales'
-    LEFT JOIN BL_3NF.CE_ITEMS_SCD  i ON s.item_id             = i.ITEM_SRC_ID
-                                     AND i.TA_IS_ACTIVE        = 'Y'
-    LEFT JOIN BL_3NF.CE_PROMOTIONS p ON s.promo_id            = p.PROMO_SRC_ID
-    WHERE NOT EXISTS (
-        SELECT 1 FROM BL_3NF.CE_SALES t
-        WHERE t.DATE_ID  = d.DATE_ID
-          AND t.STORE_ID = m.STORE_ID
-          AND t.ITEM_ID  = i.ITEM_ID
-    );
+        BOTTLES_SOLD, SALE_DOLLARS, VOLUME_SOLD_LITERS
+    )
+    SELECT DISTINCT 
+        src.target_date_id,
+        src.target_store_id,
+        src.target_item_id,
+        src.target_promo_id,
+        src.bottles_sold,
+        src.sale_dollars,
+        src.volume_sold_liters
+    FROM (
 
-    GET DIAGNOSTICS p_rows_current = ROW_COUNT;
-    p_rows := p_rows + p_rows_current;
+        SELECT 
+            COALESCE(d.DATE_ID, -1) as target_date_id,
+            COALESCE(m.STORE_ID, -1) as target_store_id,
+            COALESCE(i.ITEM_ID,  -1) as target_item_id,
+            COALESCE(p.PROMO_ID, -1) as target_promo_id,
+            s.bottles_sold::INTEGER as bottles_sold,
+            COALESCE(REPLACE(NULLIF(s.sale_dollars, '#VALUE!'), ',', '')::DECIMAL(15,3), 0) as sale_dollars,
+            COALESCE(REPLACE(NULLIF(s.volume_sold_liters, '#VALUE!'), ',', '')::DECIMAL(12,3), 0) as volume_sold_liters,
+            s.date::DATE as raw_date
+        FROM sa_offline_sales.src_offline_sales s
+        LEFT JOIN BL_3NF.CE_DATES      d ON s.date::DATE = d.DATE_DT
+        LEFT JOIN BL_CL.T_MAP_STORES   m ON s.store_id::INTEGER = m.store_src_id AND m.source_system = 'sa_offline_sales'
+        LEFT JOIN BL_3NF.CE_ITEMS_SCD  i ON s.item_id = i.ITEM_SRC_ID AND i.TA_IS_ACTIVE = 'Y'
+        LEFT JOIN BL_3NF.CE_PROMOTIONS p ON s.promo_id = p.PROMO_SRC_ID
+        
+        UNION ALL
+        
+        SELECT 
+            COALESCE(d.DATE_ID, -1),
+            COALESCE(m.STORE_ID, -1),
+            COALESCE(i.ITEM_ID,  -1),
+            COALESCE(p.PROMO_ID, -1),
+            s.bottles_sold::INTEGER,
+            COALESCE(REPLACE(NULLIF(s.sale_dollars, '#VALUE!'), ',', '')::DECIMAL(15,3), 0),
+            COALESCE(REPLACE(NULLIF(s.volume_sold_liters, '#VALUE!'), ',', '')::DECIMAL(12,3), 0),
+            s.date::DATE
+        FROM sa_online_sales.src_online_sales s
+        LEFT JOIN BL_3NF.CE_DATES      d ON s.date::DATE = d.DATE_DT
+        LEFT JOIN BL_CL.T_MAP_STORES   m ON s.store_id::INTEGER = m.store_src_id AND m.source_system = 'sa_online_sales'
+        LEFT JOIN BL_3NF.CE_ITEMS_SCD  i ON s.item_id = i.ITEM_SRC_ID AND i.TA_IS_ACTIVE = 'Y'
+        LEFT JOIN BL_3NF.CE_PROMOTIONS p ON s.promo_id = p.PROMO_SRC_ID) src
+    WHERE src.raw_date > v_last_load_dt
+
+    AND NOT EXISTS (
+        SELECT 1 
+        FROM BL_3NF.CE_SALES t 
+        WHERE t.DATE_ID      = src.target_date_id
+          AND t.STORE_ID     = src.target_store_id
+          AND t.ITEM_ID      = src.target_item_id
+          AND t.BOTTLES_SOLD = src.bottles_sold
+          AND t.SALE_DOLLARS = src.sale_dollars);
+
+    GET DIAGNOSTICS p_rows = ROW_COUNT;
 
     CALL BL_CL.PRC_WRITE_LOG(p_proc, p_rows, 'SUCCESS');
 
@@ -553,6 +591,8 @@ EXCEPTION WHEN OTHERS THEN
     RAISE NOTICE 'Error during loading CE_SALES: %', SQLERRM;
 END;
 $$;
+
+--Loading to CE_ITEMS_SCD in 3NF layer
 
 CREATE OR REPLACE PROCEDURE BL_CL.LOAD_CE_ITEMS_SCD()
 LANGUAGE plpgsql AS $$
@@ -584,8 +624,7 @@ BEGIN
               AND EXISTS (
                 SELECT 1
                 FROM sa_offline_sales.src_offline_sales src
-                WHERE TRIM(src.item_id) = t.ITEM_SRC_ID
-              );
+                WHERE TRIM(src.item_id) = t.ITEM_SRC_ID);
             GET DIAGNOSTICS v_rows_current = ROW_COUNT;
             v_rows_updated := v_rows_updated + v_rows_current;
             p_rows := p_rows + v_rows_current;
@@ -613,8 +652,7 @@ BEGIN
                 SELECT 1 FROM BL_3NF.CE_ITEMS_SCD t
                 WHERE t.ITEM_SRC_ID = s.item_id
                   AND t.TA_IS_ACTIVE = 'Y'
-                  AND t.TA_SOURCE_SYSTEM = 'sa_offline_sales'
-            )
+                  AND t.TA_SOURCE_SYSTEM = 'sa_offline_sales')
             ORDER BY s.item_id;
             GET DIAGNOSTICS v_rows_current = ROW_COUNT;
             v_rows_inserted := v_rows_inserted + v_rows_current;
@@ -632,13 +670,11 @@ BEGIN
                 FROM sa_online_sales.src_online_sales src
                 WHERE TRIM(src.item_id) = t.ITEM_SRC_ID
                   AND REPLACE(src.state_bottle_retail, ',', '')::DECIMAL(10,2) = t.STATE_BOTTLE_RETAIL
-                  AND REPLACE(src.state_bottle_cost,   ',', '')::DECIMAL(10,2) = t.STATE_BOTTLE_COST
-              )
+                  AND REPLACE(src.state_bottle_cost,   ',', '')::DECIMAL(10,2) = t.STATE_BOTTLE_COST)
               AND EXISTS (
                 SELECT 1
                 FROM sa_online_sales.src_online_sales src
-                WHERE TRIM(src.item_id) = t.ITEM_SRC_ID
-              );
+                WHERE TRIM(src.item_id) = t.ITEM_SRC_ID);
             GET DIAGNOSTICS v_rows_current = ROW_COUNT;
             v_rows_updated := v_rows_updated + v_rows_current;
             p_rows := p_rows + v_rows_current;
@@ -666,8 +702,7 @@ BEGIN
                 SELECT 1 FROM BL_3NF.CE_ITEMS_SCD t
                 WHERE t.ITEM_SRC_ID = s.item_id
                   AND t.TA_IS_ACTIVE = 'Y'
-                  AND t.TA_SOURCE_SYSTEM = 'sa_online_sales'
-            )
+                  AND t.TA_SOURCE_SYSTEM = 'sa_online_sales')
             ORDER BY s.item_id;
             GET DIAGNOSTICS v_rows_current = ROW_COUNT;
             v_rows_inserted := v_rows_inserted + v_rows_current;
@@ -688,6 +723,8 @@ END;
 $$;
 
 COMMIT;
+
+--Master Load Procedure
 
 CREATE OR REPLACE PROCEDURE BL_CL.LOAD_ALL_3NF_DATA()
 LANGUAGE plpgsql AS $$
@@ -714,5 +751,5 @@ END;
 $$;
 
 CALL BL_CL.LOAD_ALL_3NF_DATA();
-SELECT * FROM BL_CL.MTA_LOGS;
-DROP TABLE IF EXISTS BL_CL.MTA_LOGS CASCADE;
+SELECT * FROM BL_CL.MTA_LOGS ORDER BY bl_cl.mta_logs.log_id DESC;
+
