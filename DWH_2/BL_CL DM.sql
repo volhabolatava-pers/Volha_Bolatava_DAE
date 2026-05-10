@@ -250,19 +250,116 @@ BEGIN
 END;
 $$;
 
+ALTER TABLE BL_DM.FCT_SALES_DD RENAME TO FCT_SALES_DD_OLD;
+CREATE TABLE BL_DM.FCT_SALES_DD (
+    LIKE BL_DM.FCT_SALES_DD_OLD INCLUDING ALL
+) PARTITION BY RANGE (EVENT_DT);
+CALL BL_CL.MAINTAIN_FCT_PARTITIONS();
+INSERT INTO BL_DM.FCT_SALES_DD SELECT * FROM BL_DM.FCT_SALES_DD_OLD;
+DROP TABLE BL_DM.FCT_SALES_DD_OLD;
+SELECT
+    nmsp_parent.nspname AS parent_schema,
+    parent.relname      AS parent_table,
+    nmsp_child.nspname  AS child_schema,
+    child.relname       AS partition_name
+FROM pg_inherits
+JOIN pg_class parent      ON pg_inherits.inhparent = parent.oid
+JOIN pg_class child       ON pg_inherits.inhrelid  = child.oid
+JOIN pg_namespace nmsp_parent ON nmsp_parent.oid = parent.relnamespace
+JOIN pg_namespace nmsp_child  ON nmsp_child.oid = child.relnamespace
+WHERE parent.relname = 'fct_sales_dd';
+
+--Creating partitions 
+
+CREATE OR REPLACE PROCEDURE BL_CL.MAINTAIN_FCT_PARTITIONS()
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_start_date DATE;
+    v_end_date   DATE;
+    v_curr_date  DATE;
+    v_part_name  TEXT;
+BEGIN
+	BEGIN
+        EXECUTE 'CREATE TABLE IF NOT EXISTS BL_DM.FCT_SALES_DD_DEFAULT 
+                 PARTITION OF BL_DM.FCT_SALES_DD DEFAULT';
+	END;
+	SELECT 
+	DATE_TRUNC('month', MIN(DATE_DT)), 
+	DATE_TRUNC('month', MAX(DATE_DT))
+    INTO v_start_date, v_end_date
+    FROM BL_3NF.CE_DATES
+	WHERE DATE_DT >= '2024-01-01';
+
+	v_curr_date := v_start_date;
+
+	WHILE v_curr_date <= v_end_date LOOP
+        v_part_name := LOWER('fct_sales_dd_' || TO_CHAR(v_curr_date, 'YYYY_MM'));
+
+		EXECUTE format('CREATE TABLE IF NOT EXISTS BL_DM.%I (LIKE BL_DM.FCT_SALES_DD INCLUDING ALL)', v_part_name);
+
+BEGIN
+    EXECUTE format('ALTER TABLE BL_DM.FCT_SALES_DD ATTACH PARTITION BL_DM.%I FOR VALUES FROM (%L) TO (%L)', v_part_name, v_curr_date, (v_curr_date + INTERVAL '1 month')::DATE);
+EXCEPTION 
+   WHEN object_not_in_prerequisite_state OR duplicate_table THEN NULL;
+END;
+
+v_curr_date := v_curr_date + INTERVAL '1 month';
+    END LOOP;
+END;
+$$;
+
 --Loading FCT_SALES_DD
 
 CREATE OR REPLACE PROCEDURE BL_CL.LOAD_FCT_SALES_DD()
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_sql    TEXT;
-    p_rows   INTEGER := 0;
-    p_proc   VARCHAR := 'BL_CL.LOAD_FCT_SALES_DD';
-BEGIN 
-	v_sql := 'INSERT INTO BL_DM.FCT_SALES_DD (EVENT_DT, DATE_ID,STORE_SURR_ID, VENDOR_SURR_ID, ITEM_SURR_ID, PROMO_SURR_ID,FCT_BOTTLES_SOLD_QTY, FCT_SALE_AMT_USD,FCT_VOLUME_SOLD_LTR,  FCT_PROFIT_AMT_USD,TA_INSERT_DT)
-SELECT * FROM ( SELECT 
-	COALESCE(dd.DATE_DT,''1900-01-01''),
-    COALESCE(dd.DATE_ID,-1),
+	p_rows          INTEGER := 0;
+    p_rows_current  INTEGER := 0;
+    p_proc          VARCHAR := 'BL_CL.LOAD_FCT_SALES_DD';
+    v_month_start   DATE;
+    v_month_end     DATE;
+    v_partition     TEXT;
+    v_window_end    DATE;
+BEGIN
+
+SELECT 
+      DATE_TRUNC('month', MIN(DATE_DT)), 
+      DATE_TRUNC('month', MAX(DATE_DT))
+INTO v_month_start, v_window_end
+FROM BL_3NF.CE_DATES
+WHERE DATE_DT >= '2024-01-01';
+
+WHILE  v_month_start <= v_window_end LOOP
+	v_month_end := (v_month_start + INTERVAL '1 month')::DATE;
+    v_partition := LOWER('fct_sales_dd_' || TO_CHAR(v_month_start, 'YYYY_MM'));
+
+ IF EXISTS (
+        SELECT 1 FROM pg_inherits pi
+        JOIN pg_class c ON pi.inhrelid = c.oid
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE n.nspname = 'bl_dm'
+        AND c.relname = v_partition
+    ) THEN
+		EXECUTE format('ALTER TABLE BL_DM.FCT_SALES_DD DETACH PARTITION BL_DM.%I', v_partition);
+	EXECUTE format('TRUNCATE TABLE BL_DM.%I', v_partition);
+	ELSIF EXISTS (
+        SELECT 1 FROM pg_tables
+        WHERE schemaname = 'bl_dm'
+        AND tablename = v_partition
+    ) THEN
+	EXECUTE format('TRUNCATE TABLE BL_DM.%I', v_partition);
+ELSE
+EXECUTE format(
+            'CREATE TABLE BL_DM.%I (LIKE BL_DM.FCT_SALES_DD INCLUDING ALL)',
+            v_partition
+        );
+END IF;
+
+EXECUTE format(
+            'INSERT INTO BL_DM.%I (EVENT_DT, DATE_ID,STORE_SURR_ID, VENDOR_SURR_ID, ITEM_SURR_ID, PROMO_SURR_ID,FCT_BOTTLES_SOLD_QTY, FCT_SALE_AMT_USD,FCT_VOLUME_SOLD_LTR,  FCT_PROFIT_AMT_USD,TA_INSERT_DT)
+SELECT 
+	COALESCE(dd.DATE_DT,d.DATE_DT),
+    COALESCE(dd.DATE_ID,d.DATE_ID),
     COALESCE(ds.STORE_SURR_ID,  -1),
     COALESCE(dv.VENDOR_SURR_ID, -1),
     COALESCE(di.ITEM_SURR_ID,   -1),
@@ -277,7 +374,7 @@ JOIN  BL_3NF.CE_DATES d   ON cs.DATE_ID  = d.DATE_ID
 LEFT JOIN BL_DM.DIM_DATES_DAY dd ON d.DATE_ID  = dd.DATE_ID
 JOIN  BL_3NF.CE_STORES  s3   ON cs.STORE_ID = s3.STORE_ID
 LEFT JOIN BL_DM.DIM_STORES         ds   ON s3.STORE_ID::VARCHAR = ds.STORE_SRC_ID
-JOIN  BL_3NF.CE_ITEMS_SCD          i3   ON cs.ITEM_ID  = i3.ITEM_ID
+LEFT JOIN  BL_3NF.CE_ITEMS_SCD          i3   ON cs.ITEM_ID  = i3.ITEM_ID
                                         AND i3.TA_IS_ACTIVE = ''Y''
 LEFT JOIN BL_DM.DIM_ITEMS_SCD      di   ON i3.ITEM_ID::VARCHAR  = di.ITEM_SRC_ID
                                         AND di.TA_IS_ACTIVE = ''Y''
@@ -285,25 +382,29 @@ LEFT JOIN BL_3NF.CE_VENDORS        v3   ON i3.VENDOR_ID    = v3.VENDOR_ID
 LEFT JOIN BL_DM.DIM_VENDORS        dv   ON v3.VENDOR_ID::VARCHAR = dv.VENDOR_SRC_ID
 JOIN  BL_3NF.CE_PROMOTIONS         p3   ON cs.PROMO_ID  = p3.PROMO_ID
 LEFT JOIN BL_DM.DIM_PROMOTIONS     dp   ON p3.PROMO_ID::VARCHAR = dp.PROMO_SRC_ID
+WHERE d.DATE_DT >= %L
+              AND d.DATE_DT <  %L
 GROUP BY
     dd.DATE_DT,  dd.DATE_ID,
+	d.DATE_DT,   d.DATE_ID,
     ds.STORE_SURR_ID,
     dv.VENDOR_SURR_ID,
     di.ITEM_SURR_ID,
-    dp.PROMO_SURR_ID)
-EXCEPT
-              SELECT 
-                EVENT_DT, DATE_ID, STORE_SURR_ID, VENDOR_SURR_ID, 
-                ITEM_SURR_ID, PROMO_SURR_ID, FCT_BOTTLES_SOLD_QTY, 
-                FCT_SALE_AMT_USD, FCT_VOLUME_SOLD_LTR, FCT_PROFIT_AMT_USD, CURRENT_DATE
-              FROM BL_DM.FCT_SALES_DD';
+    dp.PROMO_SURR_ID', v_partition,v_month_start, v_month_end);
 
-    EXECUTE v_sql;
-    
-    GET DIAGNOSTICS p_rows = ROW_COUNT;
-    CALL BL_CL.PRC_WRITE_LOG(p_proc, p_rows, 'SUCCESS');
-EXCEPTION WHEN OTHERS THEN
-    CALL BL_CL.PRC_WRITE_LOG(p_proc, 0, 'ERROR: ' || SQLERRM);
+GET DIAGNOSTICS p_rows_current = ROW_COUNT;
+        p_rows := p_rows + p_rows_current;
+
+EXECUTE format('ALTER TABLE BL_DM.FCT_SALES_DD ATTACH PARTITION BL_DM.%I FOR VALUES FROM (%L) TO (%L)', 
+                        v_partition, v_month_start, v_month_end);
+
+v_month_start := v_month_end;
+
+END LOOP;
+
+CALL BL_CL.PRC_WRITE_LOG(p_proc, p_rows, 'SUCCESS');
+	EXCEPTION WHEN OTHERS THEN
+    	CALL BL_CL.PRC_WRITE_LOG(p_proc, 0, 'ERROR: ' || SQLERRM);
 END;
 $$;
 
@@ -330,7 +431,7 @@ END;
 $$;
 
 CALL BL_CL.LOAD_ALL_DM_DATA();
-SELECT * FROM BL_CL.MTA_LOGS;
+SELECT * FROM BL_CL.MTA_LOGS ORDER BY log_id DESC ;
 
 --testing ITEMS_SCD
 ALTER FOREIGN TABLE sa_offline_sales.ext_offline_sales 
