@@ -1,4 +1,7 @@
-11_task/.env
-11_task/.pytest_cache/
-11_task/__pycache__/
-__pycache__/
+DQE/.idea/
+DQE/.pytest_cache/
+DQE/venv/
+DQE/.env
+DQE/allure-results/
+**/__pycache__/
+*.ini

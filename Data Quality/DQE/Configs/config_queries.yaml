@@ -1,0 +1,23 @@
+smoke_tests:
+  - case_name: check_dwh_table_dwh_clients_exists
+    query: "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dwh' AND table_name = 'dwh_clients');"
+    expected: true
+  - case_name: check_dwh_clients_column_client_id_exists
+    query: "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_schema = 'dwh' AND table_name = 'dwh_clients' AND column_name = 'client_id');"
+    expected: true
+  - case_name: check_dwh_clients_column_first_name_exists
+    query: "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_schema = 'dwh' AND table_name = 'dwh_clients' AND column_name = 'first_name');"
+    expected: true
+
+critical_tests:
+  - case_name: check_MIDDLE_NAME_set_NA_for_S2_source
+    query: "SELECT COUNT(*) FROM dwh.dwh_clients c JOIN lnd.lnd_s2_clients s2 ON c.client_src_id = s2.client_id WHERE c.middle_name <> 'N/A' AND c.middle_name IS NOT NULL;"
+    expected: 0
+
+  - case_name: check_Validity_Flag_IS_VALID_Logic
+    query: "SELECT COUNT(*) FROM dwh.dwh_clients WHERE client_src_id LIKE 'S2%' AND ((VALID_TO > '2021-01-20' AND IS_VALID IS DISTINCT FROM 'Y') OR (VALID_TO <= '2021-01-20' AND IS_VALID IS DISTINCT FROM 'N'));"
+    expected: 0
+
+  - case_name: check_VALID_FROM_VALID_TO_defaults_for_S1_clients
+    query: "SELECT COUNT(*) FROM dwh.dwh_clients WHERE client_src_id LIKE 'S1%' AND (valid_from <> '2000-01-01'::DATE OR valid_to <> '2100-01-01'::DATE);"
+    expected: 0
