@@ -1,0 +1,8 @@
+pytest
+allure-pytest
+selenium
+psycopg2-binary
+pyyaml
+python-dotenv
+google-cloud-storage
+requests
